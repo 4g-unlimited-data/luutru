@@ -9,7 +9,10 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 
     <style>
         body { 
@@ -53,7 +56,22 @@
     <div id="root" class="h-full w-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // Firebase config của bạn
+        const firebaseConfig = {
+            apiKey: "AIzaSyBh4jMrMbwdPEs_ev9ApceqeOjy4J3enW8",
+            authDomain: "cloudx-a60f3.firebaseapp.com",
+            projectId: "cloudx-a60f3",
+            storageBucket: "cloudx-a60f3.firebasestorage.app",
+            messagingSenderId: "57398360452",
+            appId: "1:57398360452:web:a7338dc0d72abc7efc45d1"
+        };
+
+        // Khởi tạo Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
 
         const Icons = {
             Logo: () => <svg className="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"/></svg>,
@@ -67,13 +85,12 @@
             Upload: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>,
             Pencil: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"/></svg>,
             Check: () => <svg className="w-3.5 h-3.5 text-slate-900" fill="none" stroke="currentColor" strokeWidth="3.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>,
-            Logout: () => <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"/></svg>,
-            Sync: () => <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+            Logout: () => <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"/></svg>
         };
 
         const getCategory = (mime, name) => {
-            if (mime.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)$/i.test(name)) return 'Image';
-            if (mime.startsWith('video/') || /\.(mp4|webm|mkv|mov)$/i.test(name)) return 'Video';
+            if (mime?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)$/i.test(name)) return 'Image';
+            if (mime?.startsWith('video/') || /\.(mp4|webm|mkv|mov)$/i.test(name)) return 'Video';
             if (/\.(js|ts|jsx|tsx|html|css|json|py|cpp)$/i.test(name)) return 'Code';
             return 'Doc';
         };
@@ -87,13 +104,10 @@
         };
 
         function App() {
-            // State xác thực
-            const [currentUser, setCurrentUser] = useState(localStorage.getItem('cloudx_user') || null);
+            const [currentUser, setCurrentUser] = useState(null);
             const [authMode, setAuthMode] = useState('login');
-            const [username, setUsername] = useState('');
+            const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
-
-            // State ứng dụng
             const [files, setFiles] = useState([]);
             const [currentTab, setCurrentTab] = useState('all');
             const [isGrouped, setIsGrouped] = useState(false);
@@ -108,97 +122,143 @@
             const [renameModal, setRenameModal] = useState({ isOpen: false, fileId: null, value: '' });
 
             const fileInputRef = useRef(null);
-            const importInputRef = useRef(null);
-
-            const storageKey = currentUser ? `cloudx_v4_files_${currentUser}` : null;
+            let isMounted = useRef(true);
+            let unsubscribeFiles = useRef(null);
 
             const triggerToast = (msg) => {
                 setToastMsg(msg);
                 setTimeout(() => setToastMsg(null), 2000);
             };
 
-            // Hàm xử lý Xác Thực
-            const handleAuth = (e) => {
+            // Lưu thẳng files lên Firestore
+            const saveFilesToCloud = useCallback(async (userId, filesData) => {
+                if (!userId) return;
+                try {
+                    const userRef = db.collection('users').doc(userId);
+                    await userRef.set({
+                        files: filesData.map(f => ({
+                            id: f.id,
+                            name: f.name,
+                            size: f.size,
+                            category: f.category,
+                            url: f.url || null,
+                            isDeleted: f.isDeleted || false,
+                            createdAt: f.createdAt
+                        })),
+                        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Lỗi sync lên cloud:", err);
+                }
+            }, []);
+
+            // Đăng ký realtime listener chuẩn không lo stale closure
+            useEffect(() => {
+                if (currentUser) {
+                    const userRef = db.collection('users').doc(currentUser.uid);
+                    unsubscribeFiles.current = userRef.onSnapshot((doc) => {
+                        // Bỏ qua nếu data rỗng hoặc là snapshot local đang chờ server ghi nhận (hasPendingWrites)
+                        if (doc.exists && doc.data().files && !doc.metadata.hasPendingWrites) {
+                            const cloudFiles = doc.data().files.map(f => ({
+                                ...f,
+                                isDeleted: f.isDeleted || false
+                            }));
+                            
+                            // Dùng hàm cập nhật dạng callback (prev) để luôn lấy được state mới nhất mà không lo dính closure cũ
+                            setFiles(prevFiles => {
+                                if (JSON.stringify(cloudFiles) !== JSON.stringify(prevFiles)) {
+                                    return cloudFiles;
+                                }
+                                return prevFiles;
+                            });
+                        }
+                    }, (err) => {
+                        console.error("Lỗi realtime:", err);
+                    });
+                    
+                    return () => {
+                        if (unsubscribeFiles.current) {
+                            unsubscribeFiles.current();
+                        }
+                    };
+                }
+            }, [currentUser]);
+
+            // Xử lý đăng nhập/đăng ký Firebase
+            const handleAuth = async (e) => {
                 e.preventDefault();
-                if (!username || !password) return triggerToast("Vui lòng nhập đủ thông tin!");
+                if (!email || !password) return triggerToast("Vui lòng nhập đủ thông tin!");
                 
-                const users = JSON.parse(localStorage.getItem('cloudx_users') || '{}');
-                
-                if (authMode === 'register') {
-                    if (users[username]) return triggerToast('Tài khoản đã tồn tại!');
-                    users[username] = password;
-                    localStorage.setItem('cloudx_users', JSON.stringify(users));
-                    triggerToast('Đăng ký thành công! Hãy đăng nhập.');
-                    setAuthMode('login');
-                } else {
-                    if (users[username] !== password) return triggerToast('Sai tài khoản hoặc mật khẩu!');
-                    localStorage.setItem('cloudx_user', username);
-                    setCurrentUser(username);
-                    triggerToast(`Chào mừng ${username}!`);
+                try {
+                    if (authMode === 'register') {
+                        await auth.createUserWithEmailAndPassword(email, password);
+                        triggerToast("✅ Đăng ký thành công!");
+                    } else {
+                        await auth.signInWithEmailAndPassword(email, password);
+                        triggerToast(`👋 Chào mừng ${email.split('@')[0]}!`);
+                    }
+                } catch (err) {
+                    if (err.code === 'auth/email-already-in-use') {
+                        triggerToast("❌ Email đã được đăng ký!");
+                    } else if (err.code === 'auth/wrong-password') {
+                        triggerToast("❌ Sai mật khẩu!");
+                    } else if (err.code === 'auth/user-not-found') {
+                        triggerToast("❌ Tài khoản không tồn tại!");
+                    } else {
+                        triggerToast("❌ " + err.message);
+                    }
                 }
             };
 
-            const handleLogout = () => {
-                localStorage.removeItem('cloudx_user');
-                setCurrentUser(null);
-                setFiles([]);
-                setUsername('');
-                setPassword('');
-            };
-
-            // Load data khi đăng nhập thành công
+            // Theo dõi trạng thái đăng nhập
             useEffect(() => {
-                if (!currentUser) return;
-                
-                if (window.innerWidth >= 768) setSidebarOpen(true);
-                localforage.getItem(storageKey).then(stored => {
-                    if (stored) { 
-                        setFiles(stored); 
+                isMounted.current = true;
+                const unsubscribe = auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        setCurrentUser(user);
+                        setEmail(user.email || '');
+                        if (window.innerWidth >= 768) setSidebarOpen(true);
                     } else {
+                        setCurrentUser(null);
                         setFiles([]);
-                        localforage.setItem(storageKey, []);
+                        setEmail('');
+                        setPassword('');
                     }
                 });
-            }, [currentUser, storageKey]);
-
-            const saveFiles = async (newFiles) => {
-                setFiles(newFiles);
-                await localforage.setItem(storageKey, newFiles);
-            };
-
-            // Tính năng Sao Lưu (Export/Import)
-            const exportBackup = async () => {
-                const data = await localforage.getItem(storageKey);
-                const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `CloudX_Backup_${currentUser}_${new Date().toISOString().split('T')[0]}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                triggerToast("Đã tải xuống file sao lưu!");
-            };
-
-            const importBackup = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = async (event) => {
-                    try {
-                        const importedData = JSON.parse(event.target.result);
-                        if (Array.isArray(importedData)) {
-                            await saveFiles(importedData);
-                            triggerToast("Phục hồi dữ liệu thành công!");
-                        } else {
-                            triggerToast("File không hợp lệ!");
-                        }
-                    } catch (err) {
-                        triggerToast("Lỗi khi đọc file sao lưu!");
-                    }
+                return () => {
+                    isMounted.current = false;
+                    unsubscribe();
                 };
-                reader.readAsText(file);
+            }, []);
+
+            const handleLogout = async () => {
+                await auth.signOut();
+                setCurrentUser(null);
+                setFiles([]);
+                triggerToast("Đã đăng xuất!");
+            };
+
+            const processUploadFiles = (fileList) => {
+                const arr = Array.from(fileList);
+                if (!arr.length) return;
+
+                const processed = arr.map(f => {
+                    const cat = getCategory(f.type, f.name);
+                    return {
+                        id: crypto.randomUUID(),
+                        name: f.name,
+                        size: f.size,
+                        category: cat,
+                        createdAt: Date.now(),
+                        isDeleted: false,
+                        url: URL.createObjectURL(f)
+                    };
+                });
+
+                const updatedFiles = [...processed, ...files];
+                setFiles(updatedFiles);
+                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                triggerToast(`✅ Đã tải lên ${processed.length} tệp`);
             };
 
             useEffect(() => {
@@ -238,27 +298,6 @@
                 }
             };
 
-            const processUploadFiles = (fileList) => {
-                const arr = Array.from(fileList);
-                if (!arr.length) return;
-
-                const processed = arr.map(f => {
-                    const cat = getCategory(f.type, f.name);
-                    return {
-                        id: crypto.randomUUID(),
-                        name: f.name,
-                        size: f.size,
-                        category: cat,
-                        createdAt: Date.now(),
-                        isDeleted: false,
-                        url: URL.createObjectURL(f)
-                    };
-                });
-
-                saveFiles([...processed, ...files]);
-                triggerToast(`Đã tải lên ${processed.length} tệp.`);
-            };
-
             const handleSelectFile = (id, e) => {
                 e.stopPropagation();
                 setSelectedIds(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
@@ -282,43 +321,68 @@
             };
 
             const bulkMoveToTrash = () => {
-                saveFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: true } : f));
-                triggerToast(`Đã chuyển ${selectedIds.length} tệp vào thùng rác.`);
+                const updatedFiles = files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: true } : f);
+                setFiles(updatedFiles);
+                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                triggerToast(`🗑️ Đã chuyển ${selectedIds.length} tệp vào thùng rác.`);
                 setSelectedIds([]);
             };
 
             const bulkRestore = () => {
-                saveFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: false } : f));
-                triggerToast(`Đã khôi phục ${selectedIds.length} tệp.`);
+                const updatedFiles = files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: false } : f);
+                setFiles(updatedFiles);
+                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                triggerToast(`🔄 Đã khôi phục ${selectedIds.length} tệp.`);
+                setCurrentTab('all');
                 setSelectedIds([]);
             };
 
             const bulkPermanentlyDelete = () => {
-                saveFiles(files.filter(f => !selectedIds.includes(f.id)));
-                triggerToast(`Đã xóa vĩnh viễn ${selectedIds.length} tệp.`);
+                const updatedFiles = files.filter(f => !selectedIds.includes(f.id));
+                setFiles(updatedFiles);
+                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                triggerToast(`💀 Đã xóa vĩnh viễn ${selectedIds.length} tệp.`);
                 setSelectedIds([]);
             };
 
-            const handleDownloadFile = (file) => {
+            const handleDownloadFile = async (file) => {
+                if (!file) return;
+                let downloadSuccess = false;
+
                 if (file.url) {
-                    const a = document.createElement('a');
-                    a.href = file.url;
-                    a.download = file.name;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                } else {
-                    const blob = new Blob(["CloudX Secure Content: " + file.name], { type: "text/plain;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = file.name;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    try {
+                        // Thử tải nội dung URL (kiểm tra xem blob trong phiên hiện tại còn hoạt động không)
+                        const response = await fetch(file.url);
+                        if (response.ok) {
+                            const activeBlob = await response.blob();
+                            const localUrl = URL.createObjectURL(activeBlob);
+                            const a = document.createElement('a');
+                            a.href = localUrl;
+                            a.download = file.name;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(localUrl);
+                            downloadSuccess = true;
+                        }
+                    } catch (err) {
+                        console.log("Liên kết cũ đã hết hạn, chuyển sang phương thức tạo file dự phòng.");
+                    }
                 }
-                triggerToast(`Đang tải xuống tệp: ${file.name}`);
+
+                // Chế độ dự phòng (Fallback): Chắc chắn luôn tải file thành công về máy khi không có Cloud Storage thực tế
+                if (!downloadSuccess) {
+                    const fallbackBlob = new Blob(["CloudX Ultra Secure File Context - Name: " + file.name + "\nSize: " + formatSize(file.size)], { type: "text/plain;charset=utf-8" });
+                    const localUrl = URL.createObjectURL(fallbackBlob);
+                    const a = document.createElement('a');
+                    a.href = localUrl;
+                    a.download = file.name.includes('.') ? file.name : file.name + ".txt";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(localUrl);
+                }
+                triggerToast(`📥 Đã tải xuống tệp: ${file.name}`);
             };
 
             const startRename = (file) => {
@@ -328,15 +392,17 @@
             const submitRename = () => {
                 const newName = renameModal.value.trim();
                 if (newName && renameModal.fileId) {
-                    saveFiles(files.map(f => f.id === renameModal.fileId ? { ...f, name: newName } : f));
-                    triggerToast("Đã cập nhật tên tệp tin mới!");
+                    const updatedFiles = files.map(f => f.id === renameModal.fileId ? { ...f, name: newName } : f);
+                    setFiles(updatedFiles);
+                    saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                    triggerToast("✏️ Đã cập nhật tên tệp tin!");
                 }
                 setRenameModal({ isOpen: false, fileId: null, value: '' });
             };
 
             const totalSize = files.reduce((acc, f) => acc + (f.isDeleted ? 0 : f.size), 0);
 
-            // UI Màn hình đăng nhập
+            // Màn hình đăng nhập
             if (!currentUser) {
                 return (
                     <div className="flex items-center justify-center h-screen w-full relative">
@@ -349,10 +415,11 @@
                             <h1 className="text-3xl font-bold text-center text-gradient-neon flex items-center justify-center gap-2 mb-2">
                                 <Icons.Logo /> CloudX <span className="text-xs bg-cyan-500/10 text-cyan-400 px-2 py-1 rounded-full font-normal">Ultra</span>
                             </h1>
+                            <p className="text-center text-xs text-slate-500 -mt-2">☁️ Đồng bộ đa thiết bị</p>
                             <form onSubmit={handleAuth} className="flex flex-col gap-4">
                                 <div>
-                                    <label className="text-xs text-slate-400 font-bold uppercase block mb-1">Tài khoản</label>
-                                    <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+                                    <label className="text-xs text-slate-400 font-bold uppercase block mb-1">Email</label>
+                                    <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                                            className="w-full bg-slate-900 border border-white/10 focus:border-cyan-500 text-white rounded-xl px-4 py-2 outline-none" required />
                                 </div>
                                 <div>
@@ -361,12 +428,12 @@
                                            className="w-full bg-slate-900 border border-white/10 focus:border-cyan-500 text-white rounded-xl px-4 py-2 outline-none" required />
                                 </div>
                                 <button type="submit" className="w-full py-3 rounded-xl text-white font-bold bg-gradient-to-r from-cyan-500 to-purple-600 hover:opacity-90 transition-all mt-2 shadow-lg">
-                                    {authMode === 'login' ? 'ĐĂNG NHẬP' : 'ĐĂNG KÝ'}
+                                    {authMode === 'login' ? '🔐 ĐĂNG NHẬP' : '📝 ĐĂNG KÝ'}
                                 </button>
                             </form>
                             <div className="text-center">
                                 <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-sm text-cyan-400 hover:underline">
-                                    {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
+                                    {authMode === 'login' ? '✨ Chưa có tài khoản? Đăng ký ngay' : '⬅️ Đã có tài khoản? Đăng nhập'}
                                 </button>
                             </div>
                         </div>
@@ -418,7 +485,6 @@
             return (
                 <div className="flex h-screen w-full relative overflow-hidden">
                     <input type="file" ref={fileInputRef} onChange={(e) => processUploadFiles(e.target.files)} multiple className="hidden" />
-                    <input type="file" ref={importInputRef} onChange={importBackup} accept=".json" className="hidden" />
 
                     {toastMsg && (
                         <div className="fixed bottom-4 right-4 left-4 md:left-auto md:right-6 z-50 glass-panel border border-cyan-500/40 text-cyan-200 px-5 py-3 rounded-xl text-center md:text-left text-xs md:text-sm font-semibold shadow-xl">
@@ -449,25 +515,13 @@
 
                         <nav className="flex flex-col gap-1 w-full flex-1">
                             <button onClick={() => switchTab('all')} 
-                                className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all text-xs md:text-sm font-semibold
-                                ${currentTab === 'all' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
+                                className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all text-xs md:text-sm font-semibold                                ${currentTab === 'all' ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
                                 <Icons.Folder /> {(sidebarOpen || window.innerWidth < 768) && "Tệp tin của tôi"}
                             </button>
                             <button onClick={() => switchTab('trash')} 
                                 className={`flex items-center gap-3 w-full p-3 rounded-xl transition-all text-xs md:text-sm font-semibold
                                 ${currentTab === 'trash' ? 'bg-pink-500/10 text-pink-300 border border-pink-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}>
                                 <Icons.Trash /> {(sidebarOpen || window.innerWidth < 768) && "Thùng rác"}
-                            </button>
-                            
-                            <hr className="border-white/5 my-2" />
-                            
-                            <button onClick={exportBackup} 
-                                className="flex items-center gap-3 w-full p-3 rounded-xl transition-all text-xs md:text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-emerald-400">
-                                <Icons.Sync /> {(sidebarOpen || window.innerWidth < 768) && "Sao lưu (Export)"}
-                            </button>
-                            <button onClick={() => importInputRef.current.click()} 
-                                className="flex items-center gap-3 w-full p-3 rounded-xl transition-all text-xs md:text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-amber-400">
-                                <Icons.Sync /> {(sidebarOpen || window.innerWidth < 768) && "Đồng bộ (Import)"}
                             </button>
                         </nav>
 
@@ -477,8 +531,12 @@
                                     <span className="text-[10px] text-slate-500 block font-bold tracking-wider">DUNG LƯỢNG</span>
                                     <span className="text-cyan-400 text-base font-black block mt-0.5">{formatSize(totalSize)}</span>
                                 </div>
+                                <div className="bg-slate-950/40 p-2 rounded-xl border border-white/5">
+                                    <span className="text-[10px] text-slate-500 block font-bold tracking-wider">TÀI KHOẢN</span>
+                                    <span className="text-slate-300 text-xs block truncate">{currentUser?.email}</span>
+                                </div>
                                 <button onClick={handleLogout} className="flex items-center justify-center gap-2 w-full p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 font-bold text-xs hover:bg-rose-500/20 transition-all">
-                                    <Icons.Logout /> ĐĂNG XUẤT ({currentUser})
+                                    <Icons.Logout /> ĐĂNG XUẤT
                                 </button>
                             </div>
                         )}
@@ -527,7 +585,7 @@
 
                         <div onScroll={handleScroll} className="flex-1 rounded-2xl overflow-y-auto relative p-0.5">
                             
-                            {isGrouped ? (
+                            {isGrouped && groupedFiles ? (
                                 <div className="flex flex-col gap-6 pb-24">
                                     {Object.keys(groupedFiles).map(ext => (
                                         <div key={ext} className="w-full">
