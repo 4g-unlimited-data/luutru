@@ -85,7 +85,9 @@
             Upload: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>,
             Pencil: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125"/></svg>,
             Check: () => <svg className="w-3.5 h-3.5 text-slate-900" fill="none" stroke="currentColor" strokeWidth="3.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>,
-            Logout: () => <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"/></svg>
+            Logout: () => <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75"/></svg>,
+            // Icon loading xoay tròn mới thêm vào
+            Spinner: () => <svg className="w-7 h-7 md:w-8 md:h-8 text-cyan-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
         };
 
         const getCategory = (mime, name) => {
@@ -120,9 +122,13 @@
             const [visibleCount, setVisibleCount] = useState(INITIAL_LOAD);
             const [selectedIds, setSelectedIds] = useState([]);
             const [renameModal, setRenameModal] = useState({ isOpen: false, fileId: null, value: '' });
+            
+            // Trạng thái theo dõi file nào đang tải để kích hoạt hiệu ứng xoay
+            const [downloadingId, setDownloadingId] = useState(null);
 
             const fileInputRef = useRef(null);
             let isMounted = useRef(true);
+            let isSyncingFromCloud = useRef(false);
             let unsubscribeFiles = useRef(null);
 
             const triggerToast = (msg) => {
@@ -130,9 +136,8 @@
                 setTimeout(() => setToastMsg(null), 2000);
             };
 
-            // Lưu thẳng files lên Firestore
             const saveFilesToCloud = useCallback(async (userId, filesData) => {
-                if (!userId) return;
+                if (!userId || isSyncingFromCloud.current) return;
                 try {
                     const userRef = db.collection('users').doc(userId);
                     await userRef.set({
@@ -152,25 +157,46 @@
                 }
             }, []);
 
-            // Đăng ký realtime listener chuẩn không lo stale closure
+            const loadFilesFromCloud = useCallback(async (userId) => {
+                if (!userId) return [];
+                try {
+                    isSyncingFromCloud.current = true;
+                    const userRef = db.collection('users').doc(userId);
+                    const doc = await userRef.get();
+                    if (doc.exists && doc.data().files) {
+                        const loadedFiles = doc.data().files.map(f => ({
+                            ...f,
+                            isDeleted: f.isDeleted || false
+                        }));
+                        if (isMounted.current) {
+                            setFiles(loadedFiles);
+                        }
+                        return loadedFiles;
+                    } else {
+                        if (isMounted.current) setFiles([]);
+                        return [];
+                    }
+                } catch (err) {
+                    console.error("Lỗi load từ cloud:", err);
+                    if (isMounted.current) setFiles([]);
+                    return [];
+                } finally {
+                    isSyncingFromCloud.current = false;
+                }
+            }, []);
+
             useEffect(() => {
                 if (currentUser) {
                     const userRef = db.collection('users').doc(currentUser.uid);
                     unsubscribeFiles.current = userRef.onSnapshot((doc) => {
-                        // Bỏ qua nếu data rỗng hoặc là snapshot local đang chờ server ghi nhận (hasPendingWrites)
-                        if (doc.exists && doc.data().files && !doc.metadata.hasPendingWrites) {
+                        if (doc.exists && doc.data().files && !isSyncingFromCloud.current) {
                             const cloudFiles = doc.data().files.map(f => ({
                                 ...f,
                                 isDeleted: f.isDeleted || false
                             }));
-                            
-                            // Dùng hàm cập nhật dạng callback (prev) để luôn lấy được state mới nhất mà không lo dính closure cũ
-                            setFiles(prevFiles => {
-                                if (JSON.stringify(cloudFiles) !== JSON.stringify(prevFiles)) {
-                                    return cloudFiles;
-                                }
-                                return prevFiles;
-                            });
+                            if (JSON.stringify(cloudFiles) !== JSON.stringify(files)) {
+                                setFiles(cloudFiles);
+                            }
                         }
                     }, (err) => {
                         console.error("Lỗi realtime:", err);
@@ -184,7 +210,15 @@
                 }
             }, [currentUser]);
 
-            // Xử lý đăng nhập/đăng ký Firebase
+            useEffect(() => {
+                if (currentUser && !isSyncingFromCloud.current) {
+                    const timeout = setTimeout(() => {
+                        saveFilesToCloud(currentUser.uid, files);
+                    }, 1000);
+                    return () => clearTimeout(timeout);
+                }
+            }, [files, currentUser, saveFilesToCloud]);
+
             const handleAuth = async (e) => {
                 e.preventDefault();
                 if (!email || !password) return triggerToast("Vui lòng nhập đủ thông tin!");
@@ -210,13 +244,13 @@
                 }
             };
 
-            // Theo dõi trạng thái đăng nhập
             useEffect(() => {
                 isMounted.current = true;
-                const unsubscribe = auth.onAuthStateChanged((user) => {
+                const unsubscribe = auth.onAuthStateChanged(async (user) => {
                     if (user) {
                         setCurrentUser(user);
                         setEmail(user.email || '');
+                        await loadFilesFromCloud(user.uid);
                         if (window.innerWidth >= 768) setSidebarOpen(true);
                     } else {
                         setCurrentUser(null);
@@ -255,9 +289,7 @@
                     };
                 });
 
-                const updatedFiles = [...processed, ...files];
-                setFiles(updatedFiles);
-                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                setFiles([...processed, ...files]);
                 triggerToast(`✅ Đã tải lên ${processed.length} tệp`);
             };
 
@@ -321,68 +353,60 @@
             };
 
             const bulkMoveToTrash = () => {
-                const updatedFiles = files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: true } : f);
-                setFiles(updatedFiles);
-                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                setFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: true } : f));
                 triggerToast(`🗑️ Đã chuyển ${selectedIds.length} tệp vào thùng rác.`);
                 setSelectedIds([]);
             };
 
             const bulkRestore = () => {
-                const updatedFiles = files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: false } : f);
-                setFiles(updatedFiles);
-                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                setFiles(files.map(f => selectedIds.includes(f.id) ? { ...f, isDeleted: false } : f));
                 triggerToast(`🔄 Đã khôi phục ${selectedIds.length} tệp.`);
                 setCurrentTab('all');
                 setSelectedIds([]);
             };
 
             const bulkPermanentlyDelete = () => {
-                const updatedFiles = files.filter(f => !selectedIds.includes(f.id));
-                setFiles(updatedFiles);
-                saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                setFiles(files.filter(f => !selectedIds.includes(f.id)));
                 triggerToast(`💀 Đã xóa vĩnh viễn ${selectedIds.length} tệp.`);
                 setSelectedIds([]);
             };
 
+            // HÀM TẢI FILE ĐÃ ĐƯỢC TỐI ƯU SIÊU MƯỢT CHO ĐIỆN THOẠI
             const handleDownloadFile = async (file) => {
-                if (!file) return;
-                let downloadSuccess = false;
+                if (!file || downloadingId) return;
+                
+                // 1. Hiện icon xoay tức thì để phản hồi thao tác chạm
+                setDownloadingId(file.id);
+                
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                let finalUrl = file.url;
 
-                if (file.url) {
-                    try {
-                        // Thử tải nội dung URL (kiểm tra xem blob trong phiên hiện tại còn hoạt động không)
-                        const response = await fetch(file.url);
-                        if (response.ok) {
-                            const activeBlob = await response.blob();
-                            const localUrl = URL.createObjectURL(activeBlob);
-                            const a = document.createElement('a');
-                            a.href = localUrl;
-                            a.download = file.name;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(localUrl);
-                            downloadSuccess = true;
-                        }
-                    } catch (err) {
-                        console.log("Liên kết cũ đã hết hạn, chuyển sang phương thức tạo file dự phòng.");
-                    }
+                // Nếu không có URL sẵn (dữ liệu mock), tạo một Blob giả lập để làm dữ liệu mẫu
+                if (!finalUrl) {
+                    const blob = new Blob(["CloudX Secure Content: " + file.name], { type: "text/plain;charset=utf-8" });
+                    finalUrl = URL.createObjectURL(blob);
                 }
 
-                // Chế độ dự phòng (Fallback): Chắc chắn luôn tải file thành công về máy khi không có Cloud Storage thực tế
-                if (!downloadSuccess) {
-                    const fallbackBlob = new Blob(["CloudX Ultra Secure File Context - Name: " + file.name + "\nSize: " + formatSize(file.size)], { type: "text/plain;charset=utf-8" });
-                    const localUrl = URL.createObjectURL(fallbackBlob);
+                // 2. Thực hiện tải file dựa trên thiết bị
+                if (isMobile) {
+                    // Đối với Mobile: Mở bằng tab mới/Native Viewer. Hệ điều hành di động 
+                    // sẽ tự động kích hoạt tính năng Lưu file hoặc Chia sẻ cực kì mượt, không sợ bị chặn.
+                    window.open(finalUrl, '_blank');
+                } else {
+                    // Đối với PC: Tạo thẻ 'a' ẩn để tự động download ngầm xuống thư mục Downloads
                     const a = document.createElement('a');
-                    a.href = localUrl;
-                    a.download = file.name.includes('.') ? file.name : file.name + ".txt";
+                    a.href = finalUrl;
+                    a.download = file.name;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
-                    URL.revokeObjectURL(localUrl);
                 }
-                triggerToast(`📥 Đã tải xuống tệp: ${file.name}`);
+
+                // Giữ hiệu ứng xoay nhẹ thêm 400ms để hoạt ảnh mượt mắt, không bị giật UI đột ngột
+                setTimeout(() => {
+                    setDownloadingId(null);
+                    triggerToast(`📥 Đã xử lý mở tệp: ${file.name}`);
+                }, 400);
             };
 
             const startRename = (file) => {
@@ -392,9 +416,7 @@
             const submitRename = () => {
                 const newName = renameModal.value.trim();
                 if (newName && renameModal.fileId) {
-                    const updatedFiles = files.map(f => f.id === renameModal.fileId ? { ...f, name: newName } : f);
-                    setFiles(updatedFiles);
-                    saveFilesToCloud(currentUser.uid, updatedFiles); // Lưu thẳng lên cloud
+                    setFiles(files.map(f => f.id === renameModal.fileId ? { ...f, name: newName } : f));
                     triggerToast("✏️ Đã cập nhật tên tệp tin!");
                 }
                 setRenameModal({ isOpen: false, fileId: null, value: '' });
@@ -402,7 +424,6 @@
 
             const totalSize = files.reduce((acc, f) => acc + (f.isDeleted ? 0 : f.size), 0);
 
-            // Màn hình đăng nhập
             if (!currentUser) {
                 return (
                     <div className="flex items-center justify-center h-screen w-full relative">
@@ -443,6 +464,9 @@
 
             const renderFileCard = (file) => {
                 const isSelected = selectedIds.includes(file.id);
+                // Biến kiểm tra xem file này có đang được xử lý tải hay không
+                const isThisFileDownloading = downloadingId === file.id;
+
                 return (
                     <div key={file.id} 
                         onClick={(e) => { 
@@ -467,15 +491,24 @@
 
                         <div className={`flex ${viewMode === 'grid' ? 'flex-col items-center w-full' : 'items-center gap-3'} flex-1 min-w-0`}>
                             <div className={viewMode === 'grid' ? 'mb-2 mt-4' : 'shrink-0'}>
-                                {file.category === 'Image' && <Icons.Image />}
-                                {file.category === 'Video' && <Icons.Video />}
-                                {file.category === 'Code' && <Icons.Code />}
-                                {file.category === 'Doc' && <Icons.Doc />}
+                                {/* Thay đổi icon thành Spinner nếu file này đang được tải */}
+                                {isThisFileDownloading ? (
+                                    <Icons.Spinner />
+                                ) : (
+                                    <>
+                                        {file.category === 'Image' && <Icons.Image />}
+                                        {file.category === 'Video' && <Icons.Video />}
+                                        {file.category === 'Code' && <Icons.Code />}
+                                        {file.category === 'Doc' && <Icons.Doc />}
+                                    </>
+                                )}
                             </div>
                             
                             <div className="w-full min-w-0 overflow-hidden">
                                 <p className="text-xs md:text-sm font-semibold text-slate-200 truncate group-hover:text-cyan-300 w-full block" title={file.name}>{file.name}</p>
-                                <p className="text-[10px] md:text-xs text-slate-500 mt-0.5 truncate w-full block">{formatSize(file.size)}</p>
+                                <p className="text-[10px] md:text-xs text-slate-500 mt-0.5 truncate w-full block">
+                                    {isThisFileDownloading ? "Đang xử lý..." : formatSize(file.size)}
+                                </p>
                             </div>
                         </div>
                     </div>
